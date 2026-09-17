@@ -3,5 +3,5 @@
   "description": "Discord presence tracker: system notifications, groups, aliases, icons, colors, PIN, privacy, pinned users, swipe actions, Safe mode, activities and Timeline.",
   "authors": [{"name":"Meldix"}],
   "main": "index7.js",
-  "hash": "presencewatch-1.5.7"
+  "hash": "presencewatch-1.5.8"
 }
