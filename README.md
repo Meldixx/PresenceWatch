@@ -2,13 +2,13 @@
 
 PresenceWatch — плагин для Revenge на Android для отслеживания Discord presence выбранных пользователей.
 
-## Текущая recovery-сборка
+## Recovery build
 
-После проблем с v1.6.2 активная сборка опубликована под новым main-файлом, чтобы обойти закэшированный сломанный `index7.js` в Revenge.
+После проблем с v1.6.2 активная recovery-сборка вынесена в новый main-файл, чтобы обойти старый кэш Revenge.
 
-- Manifest hash: `presencewatch-1.6.3-recovery`
+- Manifest hash: `presencewatch-1.6.3-recovery-2`
 - Main file: `install/index9.js`
-- Код внутри recovery-сборки: последняя подтверждённо рабочая база v1.6.1
+- `index9.js` содержит последнюю подтверждённо рабочую базу v1.6.1
 
 URL установки:
 
