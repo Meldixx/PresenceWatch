@@ -1,11 +1,11 @@
 {
   "name": "PresenceWatch",
-  "description": "Discord presence tracker: PIN, privacy, custom order, pinned users, swipe actions, Safe mode, activities, Timeline and changelog.",
+  "description": "Discord presence tracker: groups, aliases, icons, colors, PIN, privacy, custom order, pinned users, swipe actions, Safe mode, activities, Timeline and changelog.",
   "authors": [
     {
       "name": "Meldix"
     }
   ],
   "main": "index7.js",
-  "hash": "presencewatch-1.5.5"
+  "hash": "presencewatch-1.5.6"
 }
