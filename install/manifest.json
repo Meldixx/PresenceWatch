@@ -1,11 +1,11 @@
 {
   "name": "PresenceWatch",
-  "description": "Уведомляет, когда выбранные пользователи Discord появляются в сети.",
+  "description": "Уведомления о статусе Discord: история, last seen, время онлайн, платформа и быстрый watchlist.",
   "authors": [
     {
       "name": "Meldix"
     }
   ],
   "main": "index.js",
-  "hash": "presencewatch-1.0.1"
+  "hash": "presencewatch-1.1.0"
 }
