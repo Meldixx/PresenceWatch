@@ -1,0 +1,9 @@
+{
+  "$meta": {
+    "name": "PresenceWatch",
+    "description": "Presence notifications for selected Discord users"
+  },
+  "com.meldix.presencewatch": {
+    "version": "1.0.0"
+  }
+}
