@@ -1,5 +1,5 @@
 (()=>{
-const V='1.2.3';
+const V='1.2.4';
 const S=vendetta.plugin.storage;
 const R=vendetta.metro.common.React;
 const N=vendetta.metro.common.ReactNative;
@@ -67,6 +67,15 @@ function getMainItems(ret){
     return node?.props?.items?.[0]??null;
   }catch{return null}
 }
+function getChannelRows(ret){
+  try{
+    const group=vendetta.utils.findInReactTree(ret,n=>Array.isArray(n)&&n.length>1&&String(n?.[0]?.type?.name||'')==='ActionSheetRowGroup');
+    const rows=group?.[1]?.props?.children;
+    if(Array.isArray(rows))return rows;
+    const groupNode=vendetta.utils.findInReactTree(ret,n=>String(n?.type?.name||'')==='ActionSheetRowGroup'&&Array.isArray(n?.props?.children));
+    return Array.isArray(groupNode?.props?.children)?groupNode.props.children:null;
+  }catch{return null}
+}
 function profileIdFromProps(props){const id=props?.user?.id??props?.userId;return valid(id)?String(id):''}
 function dmUserIdFromProps(props){
   try{
@@ -79,10 +88,20 @@ function dmUserIdFromProps(props){
 }
 function addMenuItem(items,id){
   if(!Array.isArray(items)||!valid(id))return false;
-  if(items.some(x=>x?.__presencewatch||String(x?.label||'').includes('PresenceWatch')))return true;
-  const item={__presencewatch:true,label:has(id)?'✓ Удалить из PresenceWatch':'👁 Добавить в PresenceWatch',action:()=>toggle(id)};
+  if(items.some(x=>x?.__presencewatch||x?.id==='presencewatch-profile'||String(x?.label||'').includes('PresenceWatch')))return true;
+  const item={__presencewatch:true,id:'presencewatch-profile',label:has(id)?'✓ Удалить из PresenceWatch':'👁 Добавить в PresenceWatch',action:()=>toggle(id)};
   let di=items.findIndex(x=>x?.variant==='destructive'||x?.isDestructive);
   di>=0?items.splice(di,0,item):items.push(item);
+  return true;
+}
+function addChannelMenuItem(ret,id){
+  const rows=getChannelRows(ret);
+  if(!Array.isArray(rows)||!rows.length||!valid(id))return false;
+  if(rows.some(x=>x?.key==='presencewatch-channel'||String(x?.props?.label||'').includes('PresenceWatch')))return true;
+  const template=rows.find(x=>x?.type);
+  if(!template?.type)return false;
+  const row=R.createElement(template.type,{key:'presencewatch-channel',label:has(id)?'✓ Удалить из PresenceWatch':'👁 Добавить в PresenceWatch',onPress:()=>toggle(id)});
+  rows.push(row);
   return true;
 }
 function patchNamed(name,kind){
@@ -96,8 +115,8 @@ function patchNamed(name,kind){
         const props=args?.[0]||{};
         const id=kind==='profile'?profileIdFromProps(props):dmUserIdFromProps(props);
         if(!id)return;
-        const items=getMainItems(ret);
-        addMenuItem(items,id);
+        const ok=kind==='channel'?addChannelMenuItem(ret,id):addMenuItem(getMainItems(ret),id);
+        if(kind==='channel')S.debug.channelInjected=!!ok;
       }catch(e){S.debug.lastPatchError=String(e?.message||e)}
     });
     UN.push(un);PATCHED.add(name);S.debug.lastPatched=name;return true;
@@ -137,7 +156,7 @@ function Settings(){
   const cards=ids.map(id=>{let u=user(id),s=status(id),x=stat(id),cur=s!=='offline'&&x.sessionStarted?Date.now()-x.sessionStarted:0,total=(x.totalMs||0)+cur,pl=platform(id),a=avatar(id),editing=editId===id,confirm=delId===id;return h(N.View,{key:id,style:[st.user,{borderLeftWidth:3,borderLeftColor:s==='online'?'#3ba55d':s==='idle'?'#d9a441':s==='dnd'?'#ed4245':'#4e5058'}]},h(N.View,{style:st.row},a?h(N.Image,{source:{uri:a},style:st.avatar}):h(N.View,{style:st.avatar}),h(N.View,{style:st.grow},h(N.Text,{style:st.head},displayName(id)),h(N.Text,{style:st.hint},u?.username?`@${u.username}`:`ID ${id}`),h(N.View,{style:st.chips},h(N.View,{style:st.chip},h(N.Text,{style:st.chipText},`${dot(s)} ${sl(s)}`)),h(N.View,{style:st.chip},h(N.Text,{style:st.chipText},`📱 ${pl}`))))),h(N.View,{style:st.stats},h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'ПОСЛЕДНИЙ РАЗ'),h(N.Text,{style:st.statV},s==='offline'?ago(x.lastSeen):'Сейчас')),h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'СЕССИЯ'),h(N.Text,{style:st.statV},cur?dur(cur):'—')),h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'ВСЕГО'),h(N.Text,{style:st.statV},dur(total)))),editing?h(N.View,{style:{gap:8}},h(N.TextInput,{style:st.input,value:editValue,onChangeText:setEditValue,placeholder:uname(id),placeholderTextColor:'#666b74',autoFocus:true}),h(N.View,{style:st.buttons},h(N.Pressable,{style:[st.primary,{flex:1}],onPress:()=>saveAlias(id)},h(N.Text,{style:st.btn},'Сохранить')),h(N.Pressable,{style:[st.secondary,{flex:1}],onPress:()=>{setEditId(null);setEditValue('')}},h(N.Text,{style:st.btn},'Отмена')))):null,h(N.View,{style:st.buttons},h(N.Pressable,{style:[st.secondary,{flex:1}],onPress:()=>{setDelId(null);setEditId(id);setEditValue(alias(id)||u?.globalName||u?.username||'')}},h(N.Text,{style:st.btn},'✏️ Имя')),h(N.Pressable,{style:[confirm?st.danger2:st.danger,{flex:1}],onPress:()=>{if(confirm){remove(id);setDelId(null);if(editId===id)setEditId(null)}else{setDelId(id);setTimeout(()=>setDelId(x=>x===id?null:x),4000)}}},h(N.Text,{style:st.btn},confirm?'Удалить точно?':'Удалить'))))});
   const hist=(S.history||[]).slice(0,20).map((e,i)=>h(N.View,{key:`${e.at}-${i}`,style:{backgroundColor:'#151619',borderRadius:12,padding:11,gap:3}},h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow,{fontWeight:'700'}]},`${dot(e.to)} ${alias(e.id)||e.name}`),h(N.Text,{style:st.muted},new Date(e.at).toLocaleTimeString())),h(N.Text,{style:st.hint},`${sl(e.from)} → ${sl(e.to)} • ${e.platform||'Неизвестно'}`)));
   return h(N.ScrollView,{contentContainerStyle:st.page,keyboardShouldPersistTaps:'handled'},
-    h(N.View,{style:st.hero},h(N.Text,{style:st.title},'PresenceWatch'),h(N.Text,{style:st.hint},`VERSION ${V} • ● Активен`),h(N.View,{style:st.metricRow},h(N.View,{style:st.metric},h(N.Text,{style:st.metricNum},String(ids.length)),h(N.Text,{style:st.metricLab},'Отслеживается')),h(N.View,{style:st.metric},h(N.Text,{style:st.metricNum},String(online)),h(N.Text,{style:st.metricLab},'Онлайн')),h(N.View,{style:st.metric},h(N.Text,{style:st.metricNum},String((S.history||[]).length)),h(N.Text,{style:st.metricLab},'Событий'))),h(N.Text,{style:st.hint},`Запущен: ${ago(started)} • Последнее событие: ${S.lastEventAt?ago(S.lastEventAt):'ещё не было'}`),h(N.Text,{style:st.hint},`Меню: ${[...PATCHED].join(', ')||'ожидание модулей'}`)),
+    h(N.View,{style:st.hero},h(N.Text,{style:st.title},'PresenceWatch'),h(N.Text,{style:st.hint},`VERSION ${V} • ● Активен`),h(N.View,{style:st.metricRow},h(N.View,{style:st.metric},h(N.Text,{style:st.metricNum},String(ids.length)),h(N.Text,{style:st.metricLab},'Отслеживается')),h(N.View,{style:st.metric},h(N.Text,{style:st.metricNum},String(online)),h(N.Text,{style:st.metricLab},'Онлайн')),h(N.View,{style:st.metric},h(N.Text,{style:st.metricNum},String((S.history||[]).length)),h(N.Text,{style:st.metricLab},'Событий'))),h(N.Text,{style:st.hint},`Запущен: ${ago(started)} • Последнее событие: ${S.lastEventAt?ago(S.lastEventAt):'ещё не было'}`),h(N.Text,{style:st.hint},`Меню: ${[...PATCHED].join(', ')||'ожидание модулей'}`),S.debug.channelInjected?h(N.Text,{style:st.hint},'Long press: подключено'):null),
     h(N.View,{style:st.card},h(N.Text,{style:st.section},'Watchlist'),h(N.Text,{style:st.head},'Добавить пользователя'),h(N.TextInput,{style:st.input,value:input,onChangeText:setInput,keyboardType:'numeric',placeholder:'Discord ID',placeholderTextColor:'#666b74'}),h(N.Pressable,{style:st.primary,onPress:()=>{if(add(input))setInput('')}},h(N.Text,{style:st.btn},'＋ Добавить')),h(N.Text,{style:st.hint},'Также можно добавить через ⋯ профиля или долгим нажатием на ЛС.')),
     ...cards,
     h(N.View,{style:st.card},h(N.Text,{style:st.section},'Уведомления'),h(N.View,{style:st.switch},h(N.View,{style:st.grow},h(N.Text,{style:st.text},'Выход из сети'),h(N.Text,{style:st.hint},'Уведомить при переходе в Offline')),h(N.Switch,{value:!!S.notifyOffline,onValueChange:v=>S.notifyOffline=v})),h(N.View,{style:st.switch},h(N.View,{style:st.grow},h(N.Text,{style:st.text},'Online / Idle / DND'),h(N.Text,{style:st.hint},'Уведомлять о смене активного статуса')),h(N.Switch,{value:!!S.notifyStatusChanges,onValueChange:v=>S.notifyStatusChanges=v})),h(N.Pressable,{style:st.secondary,onPress:()=>notify('🟢 Тестовое уведомление PresenceWatch')},h(N.Text,{style:st.btn},'🔔 Проверить уведомление'))),
