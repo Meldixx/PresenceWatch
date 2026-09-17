@@ -1,211 +1,35 @@
-(() => {
-    const storage = vendetta.plugin.storage;
-    const React = vendetta.metro.common.React;
-    const RN = vendetta.metro.common.ReactNative;
-    const FluxDispatcher = vendetta.metro.common.FluxDispatcher;
-    const previousStatuses = new Map();
-
-    storage.userIds ??= "";
-    storage.notifyOffline ??= false;
-    storage.notifyStatusChanges ??= false;
-
-    function parseIds(value) {
-        return new Set(String(value || "").match(/\d{15,22}/g) || []);
-    }
-
-    function normalizeStatus(value) {
-        const status = String(value == null ? "offline" : value).toLowerCase();
-        return status === "online" || status === "idle" || status === "dnd" ? status : "offline";
-    }
-
-    function statusLabel(status) {
-        if (status === "online") return "в сети";
-        if (status === "idle") return "неактивен";
-        if (status === "dnd") return "не беспокоить";
-        return "не в сети";
-    }
-
-    function getPresenceStore() {
-        try { return vendetta.metro.findByStoreName("PresenceStore"); }
-        catch (_) { return null; }
-    }
-
-    function getUserStore() {
-        try { return vendetta.metro.findByStoreName("UserStore"); }
-        catch (_) { return null; }
-    }
-
-    function getStoreStatus(userId) {
-        try {
-            const store = getPresenceStore();
-            const direct = store?.getStatus?.(userId);
-            if (direct != null) return normalizeStatus(direct);
-            const presence = store?.getPresence?.(userId);
-            if (presence?.status != null) return normalizeStatus(presence.status);
-        } catch (_) {}
-        return "offline";
-    }
-
-    function payloadUserId(payload) {
-        const value = payload?.user?.id ?? payload?.userId ?? payload?.user_id ?? payload?.presence?.user?.id ?? payload?.id;
-        return value == null ? "" : String(value);
-    }
-
-    function payloadStatus(payload, userId) {
-        const explicit = payload?.status ?? payload?.presence?.status ?? payload?.user?.status;
-        if (explicit != null) return normalizeStatus(explicit);
-
-        const clients = payload?.clientStatus ?? payload?.client_status;
-        if (clients && typeof clients === "object") {
-            const values = Object.values(clients).map(normalizeStatus);
-            if (values.includes("online")) return "online";
-            if (values.includes("dnd")) return "dnd";
-            if (values.includes("idle")) return "idle";
-        }
-        return getStoreStatus(userId);
-    }
-
-    function displayName(payload, userId) {
-        const direct = payload?.user?.globalName ?? payload?.user?.global_name ?? payload?.user?.username;
-        if (direct) return direct;
-        try {
-            const user = getUserStore()?.getUser?.(userId);
-            return user?.globalName ?? user?.username ?? userId;
-        } catch (_) {
-            return userId;
-        }
-    }
-
-    function notify(message) {
-        try {
-            const push = RN?.NativeModules?.PushNotificationAndroid;
-            if (push?.presentLocalNotification) {
-                push.presentLocalNotification({
-                    alertTitle: "PresenceWatch",
-                    alertBody: message,
-                    message
-                });
-                return;
-            }
-        } catch (_) {}
-
-        try { vendetta.ui.toasts.showToast("PresenceWatch: " + message); }
-        catch (_) {}
-    }
-
-    function primeStatuses() {
-        const ids = parseIds(storage.userIds);
-        for (const id of ids) {
-            if (!previousStatuses.has(id)) previousStatuses.set(id, getStoreStatus(id));
-        }
-        for (const id of Array.from(previousStatuses.keys())) {
-            if (!ids.has(id)) previousStatuses.delete(id);
-        }
-    }
-
-    function onPresence(payload) {
-        const userId = payloadUserId(payload);
-        if (!userId || !parseIds(storage.userIds).has(userId)) return;
-
-        const next = payloadStatus(payload, userId);
-        const prev = previousStatuses.has(userId) ? previousStatuses.get(userId) : getStoreStatus(userId);
-        previousStatuses.set(userId, next);
-        if (prev === next) return;
-
-        const name = displayName(payload, userId);
-        if (prev === "offline" && next !== "offline") {
-            notify("🟢 " + name + " " + statusLabel(next));
-        } else if (prev !== "offline" && next === "offline" && storage.notifyOffline) {
-            notify("⚫ " + name + " вышел из сети");
-        } else if (prev !== "offline" && next !== "offline" && storage.notifyStatusChanges) {
-            notify("🟡 " + name + ": " + statusLabel(next));
-        }
-    }
-
-    function Settings() {
-        vendetta.storage.useProxy(storage);
-        const [idsText, setIdsText] = React.useState(storage.userIds || "");
-
-        const saveIds = () => {
-            const cleaned = Array.from(parseIds(idsText)).join(", ");
-            storage.userIds = cleaned;
-            setIdsText(cleaned);
-            primeStatuses();
-        };
-
-        const h = React.createElement;
-        const s = {
-            page: { padding: 16, gap: 12 },
-            card: { backgroundColor: "#202225", borderRadius: 14, padding: 16, gap: 10 },
-            title: { color: "#fff", fontSize: 22, fontWeight: "700" },
-            label: { color: "#f2f3f5", fontSize: 15, fontWeight: "600" },
-            hint: { color: "#949ba4", fontSize: 12, lineHeight: 17 },
-            input: { backgroundColor: "#111214", color: "#fff", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
-            row: { flexDirection: "row", alignItems: "center", gap: 12 },
-            rowText: { flex: 1, gap: 4 },
-            button: { backgroundColor: "#5865F2", borderRadius: 10, paddingVertical: 11, paddingHorizontal: 14, alignItems: "center" },
-            buttonText: { color: "#fff", fontWeight: "700" }
-        };
-
-        return h(RN.ScrollView, { contentContainerStyle: s.page },
-            h(RN.View, { style: s.card },
-                h(RN.Text, { style: s.title }, "PresenceWatch"),
-                h(RN.Text, { style: s.hint }, "Отслеживает presence-события, которые получает твой Discord-клиент.")
-            ),
-            h(RN.View, { style: s.card },
-                h(RN.Text, { style: s.label }, "Discord ID"),
-                h(RN.TextInput, {
-                    style: s.input,
-                    value: idsText,
-                    onChangeText: setIdsText,
-                    onBlur: saveIds,
-                    onSubmitEditing: saveIds,
-                    placeholder: "123456789012345678",
-                    placeholderTextColor: "#777"
-                }),
-                h(RN.Text, { style: s.hint }, "Можно указать несколько ID через запятую или с новой строки."),
-                h(RN.Pressable, { style: s.button, onPress: saveIds },
-                    h(RN.Text, { style: s.buttonText }, "Сохранить ID")
-                )
-            ),
-            h(RN.View, { style: s.card },
-                h(RN.View, { style: s.row },
-                    h(RN.View, { style: s.rowText },
-                        h(RN.Text, { style: s.label }, "Уведомлять о выходе"),
-                        h(RN.Text, { style: s.hint }, "Уведомление при переходе в offline.")
-                    ),
-                    h(RN.Switch, {
-                        value: !!storage.notifyOffline,
-                        onValueChange: v => storage.notifyOffline = v
-                    })
-                ),
-                h(RN.View, { style: s.row },
-                    h(RN.View, { style: s.rowText },
-                        h(RN.Text, { style: s.label }, "Online / Idle / DND"),
-                        h(RN.Text, { style: s.hint }, "Уведомлять при смене активного статуса.")
-                    ),
-                    h(RN.Switch, {
-                        value: !!storage.notifyStatusChanges,
-                        onValueChange: v => storage.notifyStatusChanges = v
-                    })
-                )
-            ),
-            h(RN.Pressable, { style: s.button, onPress: () => notify("🟢 Тестовое уведомление работает") },
-                h(RN.Text, { style: s.buttonText }, "Проверить уведомление")
-            ),
-            h(RN.Text, { style: s.hint }, "Invisible определить нельзя: Discord показывает его как offline.")
-        );
-    }
-
-    return {
-        onLoad() {
-            primeStatuses();
-            FluxDispatcher.subscribe("PRESENCE_UPDATE", onPresence);
-        },
-        onUnload() {
-            try { FluxDispatcher.unsubscribe("PRESENCE_UPDATE", onPresence); } catch (_) {}
-            previousStatuses.clear();
-        },
-        settings: Settings
-    };
+(()=>{
+const V='1.1.0',S=vendetta.plugin.storage,R=vendetta.metro.common.React,N=vendetta.metro.common.ReactNative,F=vendetta.metro.common.FluxDispatcher,C=vendetta.metro.common.clipboard,P=new Map(),PL=new Map();let UP=null,started=Date.now();
+const D={online:'🟢 {name} {status} • {platform}',offline:'⚫ {name} вышел из сети • был онлайн {duration}',status:'🟡 {name}: {status} • {platform}'};
+S.users??={};S.history??=[];S.stats??={};S.notifyOffline??=false;S.notifyStatusChanges??=false;S.templates={...D,...(S.templates||{})};S.lastEventAt??=0;
+const ids=x=>Array.from(new Set(String(x||'').match(/\d{15,22}/g)||[])),tracked=()=>Object.keys(S.users||{}).filter(x=>/^\d{15,22}$/.test(x)),has=id=>!!S.users?.[String(id)];
+if(S.userIds){let u={...S.users};for(const id of ids(S.userIds))u[id]??={alias:'',addedAt:Date.now()};S.users=u}
+function ps(x){x=String(x??'offline').toLowerCase();return ['online','idle','dnd'].includes(x)?x:'offline'}
+function sl(x){return x==='online'?'в сети':x==='idle'?'неактивен':x==='dnd'?'не беспокоить':'не в сети'}
+function dot(x){return x==='online'?'🟢':x==='idle'?'🌙':x==='dnd'?'⛔':'⚫'}
+function dur(ms){let s=Math.max(0,Math.floor((+ms||0)/1000)),d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d?`${d}д ${h}ч`:h?`${h}ч ${m}м`:m?`${m}м ${s%60}с`:`${s%60}с`}
+function ago(t){if(!t)return'нет данных';let d=Date.now()-t;return d<30000?'только что':d<3600000?`${Math.floor(d/60000)} мин назад`:d<86400000?`${Math.floor(d/3600000)} ч назад`:new Date(t).toLocaleString()}
+const pstore=()=>{try{return vendetta.metro.findByStoreName('PresenceStore')}catch{return null}},ustore=()=>{try{return vendetta.metro.findByStoreName('UserStore')}catch{return null}},user=id=>{try{return ustore()?.getUser?.(String(id))}catch{return null}};
+function status(id){let s=pstore();try{return ps(s?.getStatus?.(String(id))??s?.getPresence?.(String(id))?.status)}catch{return'offline'}}
+function plat(o){if(!o||typeof o!=='object')return'неизвестно';let a=Object.entries(o).filter(([,v])=>ps(v)!=='offline').map(([k])=>k==='mobile'?'Mobile':k==='desktop'?'Desktop':k==='web'?'Web':k);return a.join(' + ')||'неизвестно'}
+function platform(id,p){let c=p?.clientStatus??p?.client_status??p?.presence?.clientStatus??p?.presence?.client_status,r=plat(c);if(r!=='неизвестно')return r;try{let s=pstore();return plat(s?.getClientStatus?.(id)??s?.getPresence?.(id)?.clientStatus)||PL.get(id)||'неизвестно'}catch{return PL.get(id)||'неизвестно'}}
+function uname(id){let u=user(id);return u?.globalName||u?.username||id}function alias(id){return S.users?.[id]?.alias||''}function name(id,p){return alias(id)||p?.user?.globalName||p?.user?.username||uname(id)}
+function avatar(id){let u=user(id);try{let x=u?.getAvatarURL?.(null,128,true)||u?.getAvatarURL?.();if(x)return x}catch{}return u?.avatar?`https://cdn.discordapp.com/avatars/${id}/${u.avatar}.png?size=128`:null}
+function toast(x){try{vendetta.ui.toasts.showToast(String(x))}catch{}}
+function notify(x){try{let n=N?.NativeModules?.PushNotificationAndroid;if(n?.presentLocalNotification){n.presentLocalNotification({alertTitle:'PresenceWatch',alertBody:x,message:x});return}}catch{}toast('PresenceWatch: '+x)}
+function tpl(t,d){let v={name:d.name||d.id,id:d.id,status:sl(d.status),platform:d.platform||'неизвестно',time:new Date(d.time||Date.now()).toLocaleTimeString(),duration:dur(d.duration)};return String(t||'').replace(/\{(name|id|status|platform|time|duration)\}/g,(_,k)=>v[k])}
+function stat(id){let all={...S.stats},x=all[id]||{totalMs:0,lastSessionMs:0,sessionStarted:0,lastSeen:0,lastStatusAt:0};if(!all[id]){all[id]=x;S.stats=all}return x}function stset(id,x){S.stats={...S.stats,[id]:x}}
+function add(id,a=''){id=String(id||'').trim();if(!/^\d{15,22}$/.test(id)){toast('Некорректный Discord ID');return false}S.users={...S.users,[id]:{...(S.users[id]||{addedAt:Date.now()}),alias:a||S.users[id]?.alias||''}};P.set(id,status(id));PL.set(id,platform(id));stat(id);toast(`${name(id)} добавлен в PresenceWatch`);return true}
+function remove(id){let u={...S.users};delete u[id];S.users=u;P.delete(id);PL.delete(id);toast('Удалено из PresenceWatch')}
+function prime(){for(const id of tracked()){P.set(id,status(id));PL.set(id,platform(id));let x=stat(id);if(status(id)!=='offline'&&!x.sessionStarted)stset(id,{...x,sessionStarted:Date.now()})}}
+function event(p){let id=String(p?.user?.id??p?.userId??p?.user_id??p?.presence?.user?.id??p?.id??'');if(!has(id))return;let now=Date.now(),n=ps(p?.status??p?.presence?.status??(Object.values(p?.clientStatus||p?.client_status||{})[0]))||status(id),o=P.has(id)?P.get(id):status(id),pl=platform(id,p);P.set(id,n);PL.set(id,pl);S.lastEventAt=now;if(o===n)return;let x=stat(id),sd=0;if(o==='offline'&&n!=='offline')x={...x,sessionStarted:now,lastStatusAt:now};else if(o!=='offline'&&n==='offline'){sd=Math.max(0,now-(x.sessionStarted||now));x={...x,totalMs:(x.totalMs||0)+sd,lastSessionMs:sd,sessionStarted:0,lastSeen:now,lastStatusAt:now}}else x={...x,lastStatusAt:now};stset(id,x);let nm=name(id,p);S.history=[{id,name:nm,at:now,from:o,to:n,platform:pl},...(S.history||[])].slice(0,300);let c={id,name:nm,status:n,platform:pl,time:now,duration:sd};if(o==='offline'&&n!=='offline')notify(tpl(S.templates.online,c));else if(o!=='offline'&&n==='offline'&&S.notifyOffline)notify(tpl(S.templates.offline,c));else if(o!=='offline'&&n!=='offline'&&S.notifyStatusChanges)notify(tpl(S.templates.status,c))}
+function rename(id){vendetta.ui.alerts.showInputAlert({title:'Имя в PresenceWatch',initialValue:alias(id),placeholder:uname(id),confirmText:'Сохранить',cancelText:'Отмена',onConfirm:v=>{S.users={...S.users,[id]:{...S.users[id],alias:String(v||'').trim()}}}})}
+function profile(){try{let M=vendetta.metro.findByName('UserProfileActions',false)||vendetta.metro.findByName('UserProfileScreen',false),Forms=vendetta.ui.components.Forms;if(!M||!Forms?.FormRow||!Forms?.FormSection)return;UP=vendetta.patcher.after('default',M,(a,r)=>{try{let p=a?.[0]||{},id=String(p?.user?.id||p?.userId||p?.profile?.user?.id||'');if(!/^\d{15,22}$/.test(id))return;let ch=r?.props?.children;if(!Array.isArray(ch)&&Array.isArray(ch?.props?.children))ch=ch.props.children;if(!Array.isArray(ch))return;let ok=has(id),row=R.createElement(Forms.FormRow,{label:ok?'✓ PresenceWatch: отслеживается':'👁 Добавить в PresenceWatch',subLabel:ok?name(id):uname(id),onPress:()=>ok?toast('Этот пользователь уже отслеживается'):add(id)});ch.push(R.createElement(Forms.FormSection,{key:'presencewatch'},row))}catch{}})}catch{}}
+function exp(){try{C.setString(JSON.stringify({app:'PresenceWatch',version:V,users:S.users,notifyOffline:S.notifyOffline,notifyStatusChanges:S.notifyStatusChanges,templates:S.templates},null,2));toast('Настройки скопированы')}catch{toast('Ошибка экспорта')}}
+async function imp(){try{let d=JSON.parse(await Promise.resolve(C.getString()));if(d?.app!=='PresenceWatch'||typeof d.users!=='object')throw Error('неверный формат');let u={};for(const [id,x]of Object.entries(d.users))if(/^\d{15,22}$/.test(id))u[id]={alias:typeof x?.alias==='string'?x.alias:'',addedAt:+x?.addedAt||Date.now()};S.users=u;S.notifyOffline=!!d.notifyOffline;S.notifyStatusChanges=!!d.notifyStatusChanges;S.templates={...D,...(d.templates||{})};prime();toast(`Импортировано: ${Object.keys(u).length}`)}catch(e){toast('Ошибка импорта: '+(e?.message||e))}}
+function Settings(){vendetta.storage.useProxy(S);let[,tick]=R.useState(0),[ni,sni]=R.useState(''),[to,sto]=R.useState(S.templates.online),[tf,stf]=R.useState(S.templates.offline),[ts,sts]=R.useState(S.templates.status);R.useEffect(()=>{let t=setInterval(()=>tick(x=>x+1),1000);return()=>clearInterval(t)},[]);let h=R.createElement,L=tracked(),on=L.filter(x=>status(x)!=='offline').length,st={page:{padding:14,gap:12,paddingBottom:35},card:{backgroundColor:'#202225',borderRadius:14,padding:14,gap:9},row:{flexDirection:'row',alignItems:'center',gap:10},grow:{flex:1},title:{color:'#fff',fontSize:21,fontWeight:'700'},head:{color:'#fff',fontSize:16,fontWeight:'700'},text:{color:'#dbdee1',fontSize:13},hint:{color:'#949ba4',fontSize:12},input:{backgroundColor:'#111214',color:'#fff',borderRadius:10,padding:10},b:{backgroundColor:'#5865F2',borderRadius:10,padding:10,alignItems:'center'},b2:{backgroundColor:'#35373c',borderRadius:10,padding:9,alignItems:'center'},bd:{backgroundColor:'#5d2f32',borderRadius:10,padding:9,alignItems:'center'},bt:{color:'#fff',fontWeight:'700'},av:{width:46,height:46,borderRadius:23,backgroundColor:'#35373c'},br:{flexDirection:'row',gap:7,flexWrap:'wrap'}};
+let cards=L.map(id=>{let u=user(id),nm=alias(id)||u?.globalName||u?.username||id,a=avatar(id),s=status(id),x=stat(id),cur=s!=='offline'&&x.sessionStarted?Date.now()-x.sessionStarted:0,total=(x.totalMs||0)+cur;return h(N.View,{key:id,style:st.card},h(N.View,{style:st.row},a?h(N.Image,{source:{uri:a},style:st.av}):h(N.View,{style:st.av}),h(N.View,{style:st.grow},h(N.Text,{style:st.head},`${dot(s)} ${nm}`),h(N.Text,{style:st.hint},`${u?.username||id} • ${id}`),h(N.Text,{style:st.text},`${sl(s)} • ${platform(id)}`))),h(N.Text,{style:st.text},`Последний раз: ${s==='offline'?ago(x.lastSeen):'сейчас в сети'}`),h(N.Text,{style:st.text},`Текущая сессия: ${cur?dur(cur):'—'} • Всего: ${dur(total)}`),x.lastSessionMs?h(N.Text,{style:st.hint},`Последняя сессия: ${dur(x.lastSessionMs)}`):null,h(N.View,{style:st.br},h(N.Pressable,{style:st.b2,onPress:()=>rename(id)},h(N.Text,{style:st.bt},'Имя')),h(N.Pressable,{style:st.bd,onPress:()=>vendetta.ui.alerts.showConfirmationAlert({title:'Удалить?',content:nm,confirmText:'Удалить',cancelText:'Отмена',onConfirm:()=>remove(id)})},h(N.Text,{style:st.bt},'Удалить'))))});
+let hist=(S.history||[]).slice(0,20).map((e,i)=>h(N.View,{key:e.at+'-'+i},h(N.Text,{style:st.text},`${dot(e.to)} ${alias(e.id)||e.name}: ${sl(e.from)} → ${sl(e.to)}`),h(N.Text,{style:st.hint},`${new Date(e.at).toLocaleString()} • ${e.platform||'неизвестно'}`)));
+return h(N.ScrollView,{contentContainerStyle:st.page,keyboardShouldPersistTaps:'handled'},h(N.View,{style:st.card},h(N.Text,{style:st.title},`PresenceWatch ${V}`),h(N.Text,{style:st.text},`● Работает • отслеживается ${L.length} • онлайн ${on}`),h(N.Text,{style:st.hint},`Запущен: ${ago(started)} • последнее событие: ${S.lastEventAt?ago(S.lastEventAt):'ещё не было'}`)),h(N.View,{style:st.card},h(N.Text,{style:st.head},'Добавить пользователя'),h(N.TextInput,{style:st.input,value:ni,onChangeText:sni,keyboardType:'numeric',placeholder:'Discord ID',placeholderTextColor:'#777'}),h(N.Pressable,{style:st.b,onPress:()=>{if(add(ni))sni('')}},h(N.Text,{style:st.bt},'Добавить')),h(N.Text,{style:st.hint},'Можно также добавить пользователя прямо из его профиля.')),...cards,h(N.View,{style:st.card},h(N.Text,{style:st.head},'Уведомления'),h(N.View,{style:st.row},h(N.Text,{style:st.grow},'Уведомлять о выходе'),h(N.Switch,{value:!!S.notifyOffline,onValueChange:v=>S.notifyOffline=v})),h(N.View,{style:st.row},h(N.Text,{style:st.grow},'Смена Online / Idle / DND'),h(N.Switch,{value:!!S.notifyStatusChanges,onValueChange:v=>S.notifyStatusChanges=v})),h(N.Pressable,{style:st.b2,onPress:()=>notify('🟢 Тестовое уведомление PresenceWatch')},h(N.Text,{style:st.bt},'Проверить уведомление'))),h(N.View,{style:st.card},h(N.Text,{style:st.head},'Свои тексты уведомлений'),h(N.Text,{style:st.hint},'Переменные: {name} {id} {status} {platform} {time} {duration}'),h(N.TextInput,{style:st.input,value:to,onChangeText:sto,multiline:true}),h(N.TextInput,{style:st.input,value:tf,onChangeText:stf,multiline:true}),h(N.TextInput,{style:st.input,value:ts,onChangeText:sts,multiline:true}),h(N.Pressable,{style:st.b,onPress:()=>{S.templates={online:to||D.online,offline:tf||D.offline,status:ts||D.status};toast('Сохранено')}},h(N.Text,{style:st.bt},'Сохранить тексты'))),h(N.View,{style:st.card},h(N.Text,{style:st.head},'Экспорт / импорт'),h(N.View,{style:st.br},h(N.Pressable,{style:st.b2,onPress:exp},h(N.Text,{style:st.bt},'Экспорт')),h(N.Pressable,{style:st.b2,onPress:imp},h(N.Text,{style:st.bt},'Импорт из буфера')))),h(N.View,{style:st.card},h(N.Text,{style:st.head},`История (${hist.length})`),...(hist.length?hist:[h(N.Text,{key:'empty',style:st.hint},'История появится после изменения статуса.')]),hist.length?h(N.Pressable,{style:st.bd,onPress:()=>S.history=[]},h(N.Text,{style:st.bt},'Очистить историю')):null),h(N.Text,{style:st.hint},'Invisible определяется как offline. Плагин видит только presence-события, которые получает Discord.'))}
+return{onLoad(){started=Date.now();prime();F.subscribe('PRESENCE_UPDATE',event);profile()},onUnload(){try{F.unsubscribe('PRESENCE_UPDATE',event)}catch{}try{UP?.()}catch{}P.clear();PL.clear()},settings:Settings}
 })()
