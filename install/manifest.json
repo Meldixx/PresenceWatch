@@ -6,6 +6,6 @@
       "name": "Meldix"
     }
   ],
-  "main": "bootstrap.js",
-  "hash": "presencewatch-1.1.5"
+  "main": "index.js",
+  "hash": "presencewatch-1.2.0"
 }
