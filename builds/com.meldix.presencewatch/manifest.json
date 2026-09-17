@@ -1,0 +1,16 @@
+{
+  "id": "com.meldix.presencewatch",
+  "spec": 3,
+  "version": "1.0.0",
+  "type": "plugin",
+  "display": {
+    "name": "PresenceWatch",
+    "description": "Уведомления, когда выбранные пользователи Discord появляются в сети.",
+    "authors": [
+      {
+        "name": "Meldix"
+      }
+    ]
+  },
+  "main": "index.js"
+}
