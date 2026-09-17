@@ -1,0 +1,30 @@
+{
+  "format": 1,
+  "name": "PresenceWatch",
+  "description": "PresenceWatch plugin repository for Revenge",
+  "plugins": {
+    "com.meldix.presencewatch": {
+      "name": "PresenceWatch",
+      "description": "Android notifications when selected Discord users change presence.",
+      "author": "Meldix",
+      "channels": {
+        "latest": "1.0.0"
+      },
+      "versions": {
+        "1.0.0": {
+          "url": "https://raw.githubusercontent.com/Meldixx/PresenceWatch/main/pool/com.meldix.presencewatch@1.0.0.zip",
+          "sha256": "bd87dd02e8a996a4c549721ed84a008f04d3920e025bc34ca9bb06dc5bce85bc",
+          "size": 3556,
+          "dependencies": {
+            "revenge.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
+    }
+  }
+}
