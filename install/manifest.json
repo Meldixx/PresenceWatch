@@ -1,7 +1,7 @@
 {
   "name": "PresenceWatch",
-  "description": "Discord presence tracker: stable recovery build with PRESENCE_UPDATES, PresenceStore monitoring, notifications, groups, aliases, icons, colors, privacy, activities and Timeline.",
+  "description": "Discord presence tracker: PRESENCE_UPDATES + PresenceStore monitoring, system notifications, groups, aliases, icons, colors, privacy, pinned users, swipe actions, activities and Timeline.",
   "authors": [{"name":"Meldix"}],
   "main": "index9.js",
-  "hash": "presencewatch-1.6.3-recovery-3"
+  "hash": "presencewatch-1.6.1"
 }
