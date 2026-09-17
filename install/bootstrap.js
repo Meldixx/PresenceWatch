@@ -1,5 +1,5 @@
 (()=>{
-const LOADER='1.1.4';
+const LOADER='1.1.5';
 const META='https://raw.githubusercontent.com/Meldixx/PresenceWatch/main/install/latest.json';
 const FALLBACK='https://raw.githubusercontent.com/Meldixx/PresenceWatch/7ce58e78fdfdab8c967c3796893b07c3f1ad74a9/install/index.js';
 const S=vendetta.plugin.storage,R=vendetta.metro.common.React,N=vendetta.metro.common.ReactNative;
@@ -17,17 +17,12 @@ if(Simple?.showSimpleActionSheet){unpatches.push(vendetta.patcher.before('showSi
 async function getLatest(){try{const r=await vendetta.utils.safeFetch(`${META}?t=${Date.now()}`,{cache:'no-store'});if(!r?.ok&&r?.status)throw Error(`HTTP ${r.status}`);const j=await r.json();if(!j?.core)throw Error('invalid latest.json');return{version:String(j.version||LOADER),core:String(j.core)}}catch{return{version:LOADER,core:'https://raw.githubusercontent.com/Meldixx/PresenceWatch/main/install/index.js'}}}
 async function fetchCode(url){const sep=url.includes('?')?'&':'?';const r=await vendetta.utils.safeFetch(`${url}${sep}t=${Date.now()}`,{cache:'no-store'});if(!r?.ok&&r?.status)throw Error(`HTTP ${r.status}`);return await r.text()}
 function runRemoteCore(code,version){
-  const key='__PRESENCEWATCH_REVENDE_CONTEXT__';
-  try{
-    globalThis[key]=vendetta;
-    let patched=String(code||'');
-    if(!patched.trim().startsWith('(()=>{'))throw Error('invalid core format');
-    patched=patched.replace('(()=>{',`(()=>{const vendetta=globalThis.${key};if(!vendetta?.plugin?.storage)throw Error('Revenge plugin context unavailable');`);
-    patched=patched.replace(/const V='[^']+'/,`const V='${String(version).replace(/'/g,'')}'`);
-    return eval(patched);
-  }finally{
-    try{delete globalThis[key]}catch{try{globalThis[key]=undefined}catch{}}
-  }
+  const safeVersion=String(version||LOADER).replace(/'/g,'');
+  let patched=String(code||'').trim();
+  if(!patched.startsWith('(()=>{'))throw Error('invalid core format');
+  patched=patched.replace(/const V='[^']+',S=vendetta\.plugin\.storage,/,`const V='${safeVersion}',S=__PW_STORAGE__,`);
+  patched=patched.replace(/vendetta\.plugin\.storage/g,'__PW_STORAGE__');
+  return eval(`(function(vendetta,__PW_STORAGE__){return ${patched}\n})(vendetta,S)`);
 }
 async function loadBase(){try{const meta=await getLatest();loadedVersion=meta.version;let code;try{code=await fetchCode(meta.core)}catch{code=await fetchCode(FALLBACK);loadedVersion=`${LOADER} fallback`}base=runRemoteCore(code,loadedVersion);if(!base||typeof base!=='object')throw Error('core did not return plugin object');await base?.onLoad?.()}catch(e){loadError=String(e?.message||e||'unknown error');toast(`PresenceWatch: ${loadError}`)}}
 function Settings(){const[,tick]=R.useState(0);R.useEffect(()=>{if(base||loadError)return;const t=setInterval(()=>tick(x=>x+1),250);return()=>clearInterval(t)},[]);if(base?.settings)return R.createElement(base.settings);return R.createElement(N.View,{style:{padding:18,gap:10}},R.createElement(N.Text,{style:{color:'#fff',fontSize:21,fontWeight:'800'}},`PresenceWatch ${loadedVersion}`),R.createElement(N.Text,{style:{color:loadError?'#ed4245':'#b5bac1',fontSize:14}},loadError?`Ошибка: ${loadError}`:'Проверка обновлений на GitHub…'))}
