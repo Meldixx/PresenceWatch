@@ -1,11 +1,11 @@
 {
   "name": "PresenceWatch",
-  "description": "Уведомления о статусе Discord: активности, расширенный Timeline, страницы пользователей, избранное, группы, пресеты, сводки, автоочистка и журнал ошибок.",
+  "description": "Discord presence tracker: PIN, privacy, drag & drop, pinned users, swipe actions, badge, Safe mode, activities, Timeline and changelog.",
   "authors": [
     {
       "name": "Meldix"
     }
   ],
-  "main": "index4.js",
-  "hash": "presencewatch-1.4.0"
+  "main": "index5.js",
+  "hash": "presencewatch-1.5.0"
 }
