@@ -1,0 +1,104 @@
+name: Build and publish PresenceWatch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "plugins/**"
+      - ".github/workflows/publish.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: presencewatch-publish
+  cancel-in-progress: false
+
+env:
+  POOL_BRANCH: gh-pages
+  POOL_CHECKOUT: ${{ github.workspace }}/published
+  PAGES_BASE_URL: https://raw.githubusercontent.com/Meldixx/PresenceWatch/gh-pages
+  POOL_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+  PLAN: ${{ github.workspace }}/releases.json
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PresenceWatch
+        uses: actions/checkout@v4
+
+      - name: Checkout Revenge plugin template
+        uses: actions/checkout@v4
+        with:
+          repository: revenge-mod/revenge-plugin-template
+          ref: d47f792150f4dcc4f47aace6227f8b8c52aa84de
+          path: _template
+
+      - name: Checkout Revenge Xposed API
+        uses: actions/checkout@v4
+        with:
+          repository: revenge-mod/revenge-xposed
+          ref: b4de869199c3b1bf4537450fdf2d410d4eb3031a
+          path: _revenge-xposed
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Setup Gradle 9.6.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.6.1"
+
+      - name: Publish Revenge API to Maven Local
+        working-directory: _revenge-xposed
+        run: ./gradlew --no-daemon :api:publishToMavenLocal
+
+      - name: Prepare PresenceWatch in official template
+        run: |
+          rm -rf _template/plugins/*
+          mkdir -p _template/plugins/presencewatch
+          cp -R plugins/presencewatch/. _template/plugins/presencewatch/
+          cat > _template/repo.config.json <<'EOF'
+          {
+            "name": "PresenceWatch",
+            "description": "Presence status notifications for selected Discord users.",
+            "channels": {}
+          }
+          EOF
+
+      - name: Install template dependencies
+        working-directory: _template
+        run: bun install
+
+      - name: Check out published pool
+        working-directory: _template
+        run: .github/scripts/checkout-pool.sh
+
+      - name: Plan releases
+        id: plan
+        working-directory: _template
+        run: .github/scripts/plan-releases.sh
+
+      - name: Build PresenceWatch
+        if: steps.plan.outputs.count != '0'
+        working-directory: _template
+        run: gradle --no-daemon packagePresencewatch
+
+      - name: Publish plugin repository
+        if: steps.plan.outputs.count != '0'
+        working-directory: _template
+        run: .github/scripts/publish-pool.sh
