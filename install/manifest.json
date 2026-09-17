@@ -1,11 +1,11 @@
 {
   "name": "PresenceWatch",
-  "description": "Уведомления о статусе Discord: история, last seen, время онлайн, платформа, персональные фильтры, cooldown, тихие часы и watchlist.",
+  "description": "Уведомления о статусе Discord: активности, расширенный Timeline, страницы пользователей, избранное, группы, пресеты, сводки, автоочистка и журнал ошибок.",
   "authors": [
     {
       "name": "Meldix"
     }
   ],
   "main": "index4.js",
-  "hash": "presencewatch-1.3.0"
+  "hash": "presencewatch-1.4.0"
 }
