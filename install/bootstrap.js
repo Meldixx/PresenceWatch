@@ -1,5 +1,5 @@
 (()=>{
-const LOADER='1.1.3';
+const LOADER='1.1.4';
 const META='https://raw.githubusercontent.com/Meldixx/PresenceWatch/main/install/latest.json';
 const FALLBACK='https://raw.githubusercontent.com/Meldixx/PresenceWatch/7ce58e78fdfdab8c967c3796893b07c3f1ad74a9/install/index.js';
 const S=vendetta.plugin.storage,R=vendetta.metro.common.React,N=vendetta.metro.common.ReactNative;
@@ -16,7 +16,20 @@ if(Lazy?.openLazy){unpatches.push(vendetta.patcher.before('openLazy',Lazy,args=>
 if(Simple?.showSimpleActionSheet){unpatches.push(vendetta.patcher.before('showSimpleActionSheet',Simple,args=>{try{const cfg=args?.[0];if(!cfg||!Array.isArray(cfg.options))return;const id=getId(cfg.context)||getId(cfg.props)||getId(cfg),key=String(cfg.key||'');if(!valid(id)||(!/User|Profile/i.test(key)&&!cfg.user&&!cfg.context?.user))return;if(cfg.options.some(x=>x?.__presencewatch))return;const option={__presencewatch:true,label:has(id)?'✓ Удалить из PresenceWatch':'👁 Добавить в PresenceWatch',onPress:()=>act(id)};const destructive=cfg.options.findIndex(x=>x?.isDestructive);destructive>=0?cfg.options.splice(destructive,0,option):cfg.options.push(option)}catch{}}))}}catch{toast('PresenceWatch: не удалось подключить меню профиля')}}
 async function getLatest(){try{const r=await vendetta.utils.safeFetch(`${META}?t=${Date.now()}`,{cache:'no-store'});if(!r?.ok&&r?.status)throw Error(`HTTP ${r.status}`);const j=await r.json();if(!j?.core)throw Error('invalid latest.json');return{version:String(j.version||LOADER),core:String(j.core)}}catch{return{version:LOADER,core:'https://raw.githubusercontent.com/Meldixx/PresenceWatch/main/install/index.js'}}}
 async function fetchCode(url){const sep=url.includes('?')?'&':'?';const r=await vendetta.utils.safeFetch(`${url}${sep}t=${Date.now()}`,{cache:'no-store'});if(!r?.ok&&r?.status)throw Error(`HTTP ${r.status}`);return await r.text()}
-async function loadBase(){try{const meta=await getLatest();loadedVersion=meta.version;let code;try{code=await fetchCode(meta.core)}catch{code=await fetchCode(FALLBACK);loadedVersion=`${LOADER} fallback`}code=code.replace(/const V='[^']+'/ ,`const V='${String(loadedVersion).replace(/'/g,'')}'`);base=eval(code);await base?.onLoad?.()}catch(e){loadError=String(e?.message||e||'unknown error');toast('PresenceWatch: ошибка загрузки основной части')}}
+function runRemoteCore(code,version){
+  const key='__PRESENCEWATCH_REVENDE_CONTEXT__';
+  try{
+    globalThis[key]=vendetta;
+    let patched=String(code||'');
+    if(!patched.trim().startsWith('(()=>{'))throw Error('invalid core format');
+    patched=patched.replace('(()=>{',`(()=>{const vendetta=globalThis.${key};if(!vendetta?.plugin?.storage)throw Error('Revenge plugin context unavailable');`);
+    patched=patched.replace(/const V='[^']+'/,`const V='${String(version).replace(/'/g,'')}'`);
+    return eval(patched);
+  }finally{
+    try{delete globalThis[key]}catch{try{globalThis[key]=undefined}catch{}}
+  }
+}
+async function loadBase(){try{const meta=await getLatest();loadedVersion=meta.version;let code;try{code=await fetchCode(meta.core)}catch{code=await fetchCode(FALLBACK);loadedVersion=`${LOADER} fallback`}base=runRemoteCore(code,loadedVersion);if(!base||typeof base!=='object')throw Error('core did not return plugin object');await base?.onLoad?.()}catch(e){loadError=String(e?.message||e||'unknown error');toast(`PresenceWatch: ${loadError}`)}}
 function Settings(){const[,tick]=R.useState(0);R.useEffect(()=>{if(base||loadError)return;const t=setInterval(()=>tick(x=>x+1),250);return()=>clearInterval(t)},[]);if(base?.settings)return R.createElement(base.settings);return R.createElement(N.View,{style:{padding:18,gap:10}},R.createElement(N.Text,{style:{color:'#fff',fontSize:21,fontWeight:'800'}},`PresenceWatch ${loadedVersion}`),R.createElement(N.Text,{style:{color:loadError?'#ed4245':'#b5bac1',fontSize:14}},loadError?`Ошибка: ${loadError}`:'Проверка обновлений на GitHub…'))}
 return{onLoad(){patchProfileMenu();loadBase()},onUnload(){for(const f of unpatches.splice(0))try{f?.()}catch{};try{base?.onUnload?.()}catch{};base=null},settings:Settings}
 })()
