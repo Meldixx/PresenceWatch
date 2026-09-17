@@ -1,12 +1,12 @@
 (()=>{
-const V='1.6.0';
+const V='1.6.1';
 const MANIFEST='https://raw.githubusercontent.com/Meldixx/PresenceWatch/main/install/manifest.json';
 const S=vendetta.plugin.storage;
 const R=vendetta.metro.common.React;
 const N=vendetta.metro.common.ReactNative;
 const F=vendetta.metro.common.FluxDispatcher;
 const C=vendetta.metro.common.clipboard;
-const P=new Map(), PL=new Map(), REPEAT=new Map(), UNPATCH=[], PATCHED=new Set();
+const P=new Map(),PL=new Map(),REPEAT=new Map(),UNPATCH=[],PATCHED=new Set();
 let patchTimer=null,pollTimer=null,maintenanceTimer=null,summaryTimer=null,storeUnsub=null,channelInnerUnpatch=null;
 
 const COLORS=['#5865F2','#3BA55C','#F0B232','#ED4245','#EB459E','#9B59B6','#00A8FC','#747F8D'];
@@ -16,20 +16,20 @@ const COOLDOWNS=[0,15,30,60,120];
 const SORTS=['custom','online','name','recent'];
 const SORT_LABEL={custom:'Свой порядок',online:'Сначала онлайн',name:'По имени',recent:'По активности'};
 const PRESETS=[
- {id:'online',name:'Только вход',prefs:{online:true,offline:false,status:false,muted:false}},
- {id:'all',name:'Все изменения',prefs:{online:true,offline:true,status:true,muted:false}},
- {id:'inout',name:'Вход + выход',prefs:{online:true,offline:true,status:false,muted:false}},
- {id:'quiet',name:'Тихий',prefs:{online:false,offline:false,status:false,muted:true}}
+{id:'online',name:'Только вход',prefs:{online:true,offline:false,status:false,muted:false}},
+{id:'all',name:'Все изменения',prefs:{online:true,offline:true,status:true,muted:false}},
+{id:'inout',name:'Вход + выход',prefs:{online:true,offline:true,status:false,muted:false}},
+{id:'quiet',name:'Тихий',prefs:{online:false,offline:false,status:false,muted:true}}
 ];
 const DEF={online:'🟢 {name} появился в сети • {platform}',offline:'⚫ {name} вышел из сети • был онлайн {duration}',status:'🟡 {name}: {status} • {platform}'};
 const CHANGELOGS={
- '1.6.0':['Полностью переделано ядро presence-мониторинга','Добавлен PresenceStore polling каждые 3 секунды','Dispatcher PRESENCE_UPDATE оставлен как быстрый путь','Safe Mode больше не может отключить ядро отслеживания','Исправлен fallback статуса при неполном PRESENCE_UPDATE','Расширена диагностика мониторинга и уведомлений'],
- '1.5.9':['Расширенная статистика, активности, Timeline, repeat','Поиск, сортировка, cooldown, тихие часы и сводка'],
- '1.5.8':['Совместимость старых PIN'],
- '1.5.7':['Системные Android-уведомления и диагностика'],
- '1.5.6':['Имя, группы, эмодзи, цвета и оформление'],
- '1.5.0':['PIN, Privacy, pinned, swipe, Safe mode'],
- '1.4.0':['Активности, Timeline, страницы пользователей и группы']
+'1.6.1':['Удалён PIN-код и вся блокировка настроек','Добавлен актуальный PRESENCE_UPDATES','PRESENCE_UPDATE оставлен как fallback','PresenceStore polling каждые 3 секунды сохранён','Добавлена диагностика status/mobile/VR по каждому отслеживаемому пользователю','Mobile/VR используются как дополнительный сигнал online'],
+'1.6.0':['PresenceStore polling','Safe Mode больше не отключает ядро','Расширенная диагностика мониторинга'],
+'1.5.9':['Статистика, активности, Timeline, repeat, поиск и сортировка'],
+'1.5.7':['Системные Android-уведомления'],
+'1.5.6':['Имя, группы, эмодзи и цвета'],
+'1.5.0':['Privacy, pinned, swipe, Safe mode'],
+'1.4.0':['Активности, Timeline и группы']
 };
 
 function init(){
@@ -46,18 +46,19 @@ function init(){
  S.paused=!!S.paused;
  S.retentionDays=[7,30,90].includes(+S.retentionDays)?+S.retentionDays:30;
  S.sortMode=SORTS.includes(S.sortMode)?S.sortMode:'custom';
- S.security={enabled:false,pinHash:'',privacy:false,...(S.security&&typeof S.security==='object'?S.security:{})};
+ S.privacy=!!(S.privacy??S.security?.privacy);
+ S.security={privacy:S.privacy};
  S.safeMode={enabled:true,disabled:{},counts:{},...(S.safeMode&&typeof S.safeMode==='object'?S.safeMode:{})};
  S.safeMode.disabled=S.safeMode.disabled&&typeof S.safeMode.disabled==='object'?S.safeMode.disabled:{};
  S.safeMode.counts=S.safeMode.counts&&typeof S.safeMode.counts==='object'?S.safeMode.counts:{};
- for(const k of ['load','presence','poll','notifications','activities']){delete S.safeMode.disabled[k];delete S.safeMode.counts[k]}
+ for(const k of ['load','presence','presence-batch','poll','notifications','activities']){delete S.safeMode.disabled[k];delete S.safeMode.counts[k]}
  S.lastNotify=S.lastNotify&&typeof S.lastNotify==='object'?S.lastNotify:{};
  S.cooldownSec=COOLDOWNS.includes(+S.cooldownSec)?+S.cooldownSec:30;
  S.quiet={enabled:false,start:0,end:8,...(S.quiet&&typeof S.quiet==='object'?S.quiet:{})};
  S.dailySummary={enabled:false,hour:21,lastDate:'',...(S.dailySummary&&typeof S.dailySummary==='object'?S.dailySummary:{})};
  S.update={current:V,latest:V,available:false,checkedAt:0,...(S.update&&typeof S.update==='object'?S.update:{})};
  S.notifyDiag={lastAttempt:0,lastCall:0,lastError:'',backend:'Не проверено',...(S.notifyDiag&&typeof S.notifyDiag==='object'?S.notifyDiag:{})};
- S.diag={lastDispatcherAt:0,lastPollAt:0,lastChangeAt:0,lastChangeSource:'нет',pollCount:0,storeFound:false,...(S.diag&&typeof S.diag==='object'?S.diag:{})};
+ S.diag={lastLegacyAt:0,lastBatchAt:0,lastPollAt:0,lastChangeAt:0,lastChangeSource:'нет',pollCount:0,storeFound:false,batchCount:0,legacyCount:0,...(S.diag&&typeof S.diag==='object'?S.diag:{})};
  S.unreadEvents=Math.max(0,+S.unreadEvents||0);
  S.seenVersion=String(S.seenVersion||'');
 }
@@ -78,23 +79,38 @@ const user=id=>{try{return ustore()?.getUser?.(String(id))}catch{return null}};
 const uname=id=>{let u=user(id);return u?.globalName||u?.username||String(id)};
 const alias=id=>S.users?.[String(id)]?.alias||'';
 const displayName=id=>alias(id)||uname(id);
-function status(id){try{const st=pstore();return ps(st?.getStatus?.(String(id))??st?.getPresence?.(String(id))?.status)}catch{return'offline'}}
-function activities(id){try{const st=pstore();let a=st?.getActivities?.(String(id))??st?.getPresence?.(String(id))?.activities;return Array.isArray(a)?a:[]}catch{return[]}}
 const avatar=id=>{let u=user(id);try{return u?.getAvatarURL?.(null,128,true)||u?.getAvatarURL?.()||null}catch{return null}};
+
+function presenceInfo(id){
+ id=String(id);
+ try{
+  const st=pstore();
+  let raw=st?.getStatus?.(id)??st?.getPresence?.(id)?.status??'offline';
+  const mobile=!!st?.isMobileOnline?.(id);
+  const vr=!!st?.isVROnline?.(id);
+  const clientStatus=st?.getClientStatus?.(id)??st?.getPresence?.(id)?.clientStatus??null;
+  let status=ps(raw);
+  if(status==='offline'&&(mobile||vr))status='online';
+  return{status,raw:String(raw??'offline'),mobile,vr,clientStatus};
+ }catch{return{status:'offline',raw:'error',mobile:false,vr:false,clientStatus:null}}
+}
+const status=id=>presenceInfo(id).status;
+function activities(id){try{const st=pstore();let a=st?.getActivities?.(String(id))??st?.getPresence?.(String(id))?.activities;return Array.isArray(a)?a:[]}catch{return[]}}
 function platform(id,p){
- const parse=o=>{if(!o||typeof o!=='object')return'';return Object.entries(o).filter(([,v])=>ps(v)!=='offline').map(([k])=>k==='mobile'?'Mobile':k==='desktop'?'Desktop':k==='web'?'Web':k).join(' + ')};
+ const parse=o=>{if(!o||typeof o!=='object')return'';return Object.entries(o).filter(([,v])=>ps(v)!=='offline').map(([k])=>k==='mobile'?'Mobile':k==='desktop'?'Desktop':k==='web'?'Web':k==='vr'?'VR':k).join(' + ')};
  let r=parse(p?.clientStatus??p?.client_status??p?.presence?.clientStatus??p?.presence?.client_status);if(r)return r;
- try{let st=pstore();r=parse(st?.getClientStatus?.(String(id))??st?.getPresence?.(String(id))?.clientStatus);if(r)return r}catch{}
+ const i=presenceInfo(id);r=parse(i.clientStatus);if(r)return r;
+ if(i.mobile)return'Mobile';if(i.vr)return'VR';
  return PL.get(String(id))||'Неизвестно';
 }
 
 function logError(where,e){try{S.errors=[{at:Date.now(),where:String(where),message:String(e?.message||e),stack:String(e?.stack||'').slice(0,1200)},...(Array.isArray(S.errors)?S.errors:[])].slice(0,100)}catch{}}
-const CORE=new Set(['load','presence','poll','notifications','activities']);
+const CORE=new Set(['load','presence','presence-batch','poll','notifications','activities']);
 function safe(name,fn,fallback=null){
  if(!CORE.has(name)&&S.safeMode?.enabled&&S.safeMode?.disabled?.[name])return fallback;
  try{return fn()}catch(e){
   logError(name,e);
-  if(!CORE.has(name))try{let c=(+S.safeMode.counts[name]||0)+1;let disabled=S.safeMode.disabled||{};if(c>=3&&S.safeMode.enabled)disabled={...disabled,[name]:true};S.safeMode={...S.safeMode,counts:{...S.safeMode.counts,[name]:c},disabled};if(c===3&&S.safeMode.enabled)toast(`PresenceWatch Safe mode: ${name} отключён`)}catch{}
+  if(!CORE.has(name))try{let c=(+S.safeMode.counts[name]||0)+1,disabled=S.safeMode.disabled||{};if(c>=3&&S.safeMode.enabled)disabled={...disabled,[name]:true};S.safeMode={...S.safeMode,counts:{...S.safeMode.counts,[name]:c},disabled};if(c===3&&S.safeMode.enabled)toast(`PresenceWatch Safe mode: ${name} отключён`)}catch{}
   return fallback;
  }
 }
@@ -117,10 +133,6 @@ function notify(body){
  },false);
 }
 function openNotificationSettings(){try{let a=discordPush();if(a?.openNotificationSettings)return a.openNotificationSettings();return N?.Linking?.openSettings?.()}catch(e){logError('notification-settings',e)}}
-
-function hash(pin){let s='PW:'+String(pin||''),h=2166136261;for(let c of s){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return(h>>>0).toString(16)}
-function legacyHash(pin){let s=`PresenceWatch:${String(pin||'')}:Meldix`,h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return(h>>>0).toString(16).padStart(8,'0')}
-function verifyPin(pin){let cur=String(S.security?.pinHash||''),next=hash(pin);if(cur===next)return true;if(cur===legacyHash(pin)){S.security={...S.security,pinHash:next};toast('PIN обновлён до нового формата');return true}return false}
 
 const blankStat=()=>({totalMs:0,lastSessionMs:0,sessionStarted:0,lastSeen:0,lastStatusAt:0,eventCount:0});
 const stat=id=>S.stats?.[String(id)]||blankStat();
@@ -163,14 +175,16 @@ function processChange(id,n,source='poll',payload=null){
  else if(o!=='offline'&&n!=='offline'&&canNotify(id,'status'))notify(tpl(S.templates.status,ctx));
 }
 
-function event(p){safe('presence',()=>{
- S.diag={...S.diag,lastDispatcherAt:Date.now()};
+function onePresence(p,source){
  let id=String(p?.user?.id??p?.userId??p?.user_id??p?.presence?.user?.id??p?.id??'');if(!has(id))return;
  let a=p?.activities??p?.presence?.activities;if(Array.isArray(a))syncActs(id,a,Date.now(),true);
  const raw=p?.status??p?.presence?.status??(p?.clientStatus&&Object.values(p.clientStatus)[0])??(p?.client_status&&Object.values(p.client_status)[0]);
- const n=raw==null?status(id):ps(raw);
- processChange(id,n,'dispatcher',p);
-})}
+ let n=raw==null?status(id):ps(raw);
+ const info=presenceInfo(id);if(n==='offline'&&(info.mobile||info.vr))n='online';
+ processChange(id,n,source,p);
+}
+function eventLegacy(p){safe('presence',()=>{S.diag={...S.diag,lastLegacyAt:Date.now(),legacyCount:(+S.diag.legacyCount||0)+1};onePresence(p,'PRESENCE_UPDATE')})}
+function eventBatch(p){safe('presence-batch',()=>{S.diag={...S.diag,lastBatchAt:Date.now(),batchCount:(+S.diag.batchCount||0)+1};for(const x of(Array.isArray(p?.updates)?p.updates:[]))onePresence(x,'PRESENCE_UPDATES')})}
 function pollPresence(){safe('poll',()=>{
  const st=pstore();S.diag={...S.diag,lastPollAt:Date.now(),pollCount:(+S.diag.pollCount||0)+1,storeFound:!!st};if(!st)return;
  for(const id of tracked()){
@@ -197,33 +211,37 @@ function SwipeCard({children,id,disabled}){let A=N?.Animated,PR=N?.PanResponder;
 
 function Settings(){
  try{vendetta.storage.useProxy(S)}catch(e){logError('useProxy',e)}
- const h=R.createElement;const[,force]=R.useState(0);const[input,setInput]=R.useState('');const[search,setSearch]=R.useState('');const[selected,setSelected]=R.useState(null);const[cfg,setCfg]=R.useState(null);const[groupInput,setGroupInput]=R.useState('');const[pin,setPin]=R.useState('');const[newPin,setNewPin]=R.useState('');const[unlocked,setUnlocked]=R.useState(!S.security.enabled);const[aliasValue,setAliasValue]=R.useState('');
+ const h=R.createElement;const[,force]=R.useState(0);const[input,setInput]=R.useState('');const[search,setSearch]=R.useState('');const[selected,setSelected]=R.useState(null);const[cfg,setCfg]=R.useState(null);const[groupInput,setGroupInput]=R.useState('');const[aliasValue,setAliasValue]=R.useState('');
  R.useEffect(()=>{S.unreadEvents=0;const tm=setInterval(()=>force(x=>x+1),1000);return()=>clearInterval(tm)},[]);
  const st={page:{padding:14,gap:12,paddingBottom:42},card:{backgroundColor:'#1d1f23',borderRadius:16,padding:14,gap:9},row:{flexDirection:'row',alignItems:'center',gap:8},grow:{flex:1},title:{color:'#fff',fontSize:22,fontWeight:'800'},head:{color:'#fff',fontSize:16,fontWeight:'800'},text:{color:'#e5e7eb',fontSize:14},muted:{color:'#8f96a3',fontSize:12,lineHeight:17},section:{color:'#8f96a3',fontSize:11,fontWeight:'800',textTransform:'uppercase'},input:{backgroundColor:'#111214',color:'#fff',borderRadius:10,padding:11},primary:{backgroundColor:'#5865F2',borderRadius:10,padding:10,alignItems:'center'},secondary:{backgroundColor:'#2a2d33',borderRadius:10,padding:9,alignItems:'center'},danger:{backgroundColor:'#4a292d',borderRadius:10,padding:9,alignItems:'center'},btn:{color:'#fff',fontWeight:'800'},chips:{flexDirection:'row',gap:6,flexWrap:'wrap'},chip:{backgroundColor:'#2a2d33',paddingHorizontal:8,paddingVertical:5,borderRadius:20},chipOn:{borderWidth:1,borderColor:'#5865F2'},statRow:{flexDirection:'row',gap:8,flexWrap:'wrap'},stat:{minWidth:'30%',backgroundColor:'#15171a',padding:9,borderRadius:10,gap:2},statL:{color:'#747f8d',fontSize:9,fontWeight:'800'},statV:{color:'#fff',fontSize:13,fontWeight:'700'}};
- if(S.security.enabled&&!unlocked)return h(N.View,{style:st.page},h(N.Text,{style:st.title},'🔒 PresenceWatch'),h(N.TextInput,{style:st.input,value:pin,onChangeText:setPin,secureTextEntry:true,keyboardType:'numeric',placeholder:'PIN',placeholderTextColor:'#666'}),h(N.Pressable,{style:st.primary,onPress:()=>verifyPin(pin)?setUnlocked(true):toast('Неверный PIN')},h(N.Text,{style:st.btn},'Разблокировать')));
- const masked=!!S.security.privacy,shown=id=>masked?`${displayName(id).slice(0,1)}••••`:displayName(id),groupName=id=>S.groups.find(g=>g.id===S.users[id]?.group)?.name||'Без группы';
+ const masked=!!S.privacy,shown=id=>masked?`${displayName(id).slice(0,1)}••••`:displayName(id),groupName=id=>S.groups.find(g=>g.id===S.users[id]?.group)?.name||'Без группы';
+
  if(selected&&has(selected)){
-  const id=selected,u=S.users[id],pf=prefs(id),s=status(id),x=stat(id),acts=S.activities[id]?.items||[],timeline=S.timeline.filter(e=>e.id===id).slice(0,40),cur=s!=='offline'&&x.sessionStarted?Date.now()-x.sessionStarted:0;
+  const id=selected,u=S.users[id],pf=prefs(id),s=status(id),x=stat(id),acts=S.activities[id]?.items||[],timeline=S.timeline.filter(e=>e.id===id).slice(0,40),cur=s!=='offline'&&x.sessionStarted?Date.now()-x.sessionStarted:0,pi=presenceInfo(id);
   return h(N.ScrollView,{contentContainerStyle:st.page,keyboardShouldPersistTaps:'handled'},
    h(N.Pressable,{style:st.secondary,onPress:()=>setSelected(null)},h(N.Text,{style:st.btn},'← Назад')),
-   h(N.View,{style:[st.card,{borderLeftWidth:4,borderLeftColor:u.color||COLORS[0]}]},h(N.Text,{style:st.title},`${u.icon||'👁'} ${shown(id)}`),h(N.Text,{style:st.muted},`${dot(s)} ${sl(s)} • ${platform(id)}`),h(N.View,{style:st.statRow},h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'ТЕКУЩАЯ'),h(N.Text,{style:st.statV},s==='offline'?'—':dur(cur))),h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'ВСЕГО ONLINE'),h(N.Text,{style:st.statV},dur((x.totalMs||0)+cur))),h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'ПОСЛ. СЕССИЯ'),h(N.Text,{style:st.statV},dur(x.lastSessionMs||0))),h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'LAST SEEN'),h(N.Text,{style:st.statV},s==='offline'?ago(x.lastSeen):'Сейчас')),h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'СОБЫТИЙ'),h(N.Text,{style:st.statV},String(x.eventCount||0))))),
+   h(N.View,{style:[st.card,{borderLeftWidth:4,borderLeftColor:u.color||COLORS[0]}]},h(N.Text,{style:st.title},`${u.icon||'👁'} ${shown(id)}`),h(N.Text,{style:st.muted},`${dot(s)} ${sl(s)} • ${platform(id)}`),h(N.Text,{style:st.muted},`raw: ${pi.raw} • mobile: ${pi.mobile?'да':'нет'} • VR: ${pi.vr?'да':'нет'}`),h(N.View,{style:st.statRow},h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'ТЕКУЩАЯ'),h(N.Text,{style:st.statV},s==='offline'?'—':dur(cur))),h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'ВСЕГО ONLINE'),h(N.Text,{style:st.statV},dur((x.totalMs||0)+cur))),h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'ПОСЛ. СЕССИЯ'),h(N.Text,{style:st.statV},dur(x.lastSessionMs||0))),h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'LAST SEEN'),h(N.Text,{style:st.statV},s==='offline'?ago(x.lastSeen):'Сейчас')),h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'СОБЫТИЙ'),h(N.Text,{style:st.statV},String(x.eventCount||0))))),
    h(N.View,{style:st.card},h(N.Text,{style:st.head},'Оформление и организация'),h(N.TextInput,{style:st.input,value:aliasValue,onChangeText:setAliasValue,placeholder:displayName(id),placeholderTextColor:'#666'}),h(N.Pressable,{style:st.primary,onPress:()=>{patchUser(id,{alias:aliasValue.trim()});toast('Имя сохранено')}},h(N.Text,{style:st.btn},'Сохранить имя')),h(N.Text,{style:st.section},'Группа'),h(N.View,{style:st.chips},h(N.Pressable,{style:[st.chip,!u.group&&st.chipOn],onPress:()=>patchUser(id,{group:''})},h(N.Text,{style:st.text},'Без группы')),...S.groups.map(g=>h(N.Pressable,{key:g.id,style:[st.chip,u.group===g.id&&st.chipOn],onPress:()=>patchUser(id,{group:g.id})},h(N.Text,{style:st.text},g.name)))),h(N.Text,{style:st.section},'Эмодзи / иконка'),h(N.View,{style:st.chips},...ICONS.map(ic=>h(N.Pressable,{key:ic,style:[st.chip,u.icon===ic&&st.chipOn],onPress:()=>patchUser(id,{icon:ic})},h(N.Text,{style:{fontSize:20}},ic)))),h(N.Text,{style:st.section},'Цвет'),h(N.View,{style:st.chips},...COLORS.map(c=>h(N.Pressable,{key:c,style:{width:38,height:38,borderRadius:19,backgroundColor:c,borderWidth:u.color===c?3:0,borderColor:'#fff'},onPress:()=>patchUser(id,{color:c})}))),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'📌 Закрепить'),h(N.Switch,{value:!!u.pinned,onValueChange:v=>patchUser(id,{pinned:v})})),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'⭐ Избранное'),h(N.Switch,{value:!!u.favorite,onValueChange:v=>patchUser(id,{favorite:v})}))),
    h(N.View,{style:st.card},h(N.Text,{style:st.head},'Уведомления'),h(N.View,{style:st.chips},...PRESETS.map(pr=>h(N.Pressable,{key:pr.id,style:st.chip,onPress:()=>{setPrefs(id,pr.prefs);toast('Пресет: '+pr.name)}},h(N.Text,{style:st.text},pr.name)))),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'Вход в сеть'),h(N.Switch,{value:pf.online,onValueChange:v=>setPrefs(id,{online:v})})),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'Выход из сети'),h(N.Switch,{value:pf.offline,onValueChange:v=>setPrefs(id,{offline:v})})),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'Смена статуса'),h(N.Switch,{value:pf.status,onValueChange:v=>setPrefs(id,{status:v})})),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'Mute'),h(N.Switch,{value:pf.muted,onValueChange:v=>setPrefs(id,{muted:v})})),h(N.Pressable,{style:st.secondary,onPress:()=>{let i=REPEATS.indexOf(+u.repeatMin||0);patchUser(id,{repeatMin:REPEATS[(i+1)%REPEATS.length]})}},h(N.Text,{style:st.btn},`Повторное уведомление: ${u.repeatMin?u.repeatMin+' мин':'выкл.'}`))),
    h(N.View,{style:st.card},h(N.Text,{style:st.head},'Активности'),...(acts.length?acts.map((a,i)=>h(N.View,{key:i,style:st.stat},h(N.Text,{style:st.statV},`${a.label||activityType(a.type)}: ${a.name}`),a.details?h(N.Text,{style:st.muted},a.details):null,a.state?h(N.Text,{style:st.muted},a.state):null)):[h(N.Text,{key:'none',style:st.muted},'Нет видимых активностей')])),
    h(N.View,{style:st.card},h(N.Text,{style:st.head},'Timeline'),...(timeline.length?timeline.map((e,i)=>h(N.View,{key:i,style:st.stat},h(N.Text,{style:st.statV},e.kind==='status'?`${sl(e.from)} → ${sl(e.to)}`:e.kind==='activity_start'?`▶ ${e.activity?.name||''}`:`■ ${e.activity?.name||''}`),h(N.Text,{style:st.muted},`${new Date(e.at).toLocaleString()}${e.source?' • '+e.source:''}`))):[h(N.Text,{key:'none',style:st.muted},'Пусто')]))
   );
  }
- let list=tracked(),q=search.trim().toLowerCase(),ord=computeOrder(),oi=new Map(ord.map((x,i)=>[x,i]));if(q)list=list.filter(id=>displayName(id).toLowerCase().includes(q)||uname(id).toLowerCase().includes(q)||id.includes(q)||groupName(id).toLowerCase().includes(q));list.sort((a,b)=>{let pa=!!S.users[a]?.pinned,pb=!!S.users[b]?.pinned;if(pa!==pb)return pb-pa;if(S.sortMode==='custom')return(oi.get(a)??9999)-(oi.get(b)??9999);if(S.sortMode==='name')return displayName(a).localeCompare(displayName(b));if(S.sortMode==='recent')return(stat(b).lastStatusAt||0)-(stat(a).lastStatusAt||0);return(status(a)==='offline')-(status(b)==='offline')});
+
+ let list=tracked(),q=search.trim().toLowerCase(),ord=computeOrder(),oi=new Map(ord.map((x,i)=>[x,i]));
+ if(q)list=list.filter(id=>displayName(id).toLowerCase().includes(q)||uname(id).toLowerCase().includes(q)||id.includes(q)||groupName(id).toLowerCase().includes(q));
+ list.sort((a,b)=>{let pa=!!S.users[a]?.pinned,pb=!!S.users[b]?.pinned;if(pa!==pb)return pb-pa;if(S.sortMode==='custom')return(oi.get(a)??9999)-(oi.get(b)??9999);if(S.sortMode==='name')return displayName(a).localeCompare(displayName(b));if(S.sortMode==='recent')return(stat(b).lastStatusAt||0)-(stat(a).lastStatusAt||0);return(status(a)==='offline')-(status(b)==='offline')});
+
  return h(N.ScrollView,{contentContainerStyle:st.page,keyboardShouldPersistTaps:'handled'},
   h(N.View,{style:st.card},h(N.View,{style:st.row},h(N.View,{style:st.grow},h(N.Text,{style:st.title},'PresenceWatch'),h(N.Text,{style:st.muted},`VERSION ${V} • ${S.paused?'⏸ Пауза':'● Активен'}`)),h(N.Switch,{value:!S.paused,onValueChange:v=>S.paused=!v})),S.seenVersion!==V?h(N.View,{style:{gap:5}},h(N.Text,{style:st.section},'Что нового'),...(CHANGELOGS[V]||[]).map((x,i)=>h(N.Text,{key:i,style:st.muted},`• ${x}`)),h(N.Pressable,{style:st.secondary,onPress:()=>S.seenVersion=V},h(N.Text,{style:st.btn},'Понятно'))):null),
-  h(N.View,{style:st.card},h(N.Text,{style:st.head},'Мониторинг и уведомления'),h(N.Text,{style:st.text},`PresenceStore: ${S.diag.storeFound?'найден':'НЕ НАЙДЕН'} • Backend: ${notificationBackend()?.[0]||'не найден'}`),h(N.Text,{style:st.muted},`Dispatcher: ${ago(S.diag.lastDispatcherAt)} • Poll: ${ago(S.diag.lastPollAt)} • проверок: ${S.diag.pollCount||0}`),h(N.Text,{style:st.muted},`Последняя смена: ${ago(S.diag.lastChangeAt)} • источник: ${S.diag.lastChangeSource||'нет'} • вызов push: ${ago(S.notifyDiag.lastCall)}`),S.notifyDiag.lastError?h(N.Text,{style:{color:'#ed4245'}},S.notifyDiag.lastError):null,h(N.View,{style:st.row},h(N.Pressable,{style:[st.primary,st.grow],onPress:()=>notify('🔔 Тестовое системное уведомление PresenceWatch')},h(N.Text,{style:st.btn},'Тест уведомления')),h(N.Pressable,{style:[st.secondary,st.grow],onPress:()=>{pollPresence();let t=tracked().map(id=>`${displayName(id)}: ${sl(status(id))}`).join('\n');toast(t||'Watchlist пуст')}},h(N.Text,{style:st.btn},'Проверить статусы'))),h(N.Pressable,{style:st.secondary,onPress:openNotificationSettings},h(N.Text,{style:st.btn},'Настройки уведомлений Android'))),
+  h(N.View,{style:st.card},h(N.Text,{style:st.head},'Мониторинг и уведомления'),h(N.Text,{style:st.text},`PresenceStore: ${S.diag.storeFound?'найден':'НЕ НАЙДЕН'} • Backend: ${notificationBackend()?.[0]||'не найден'}`),h(N.Text,{style:st.muted},`PRESENCE_UPDATES: ${ago(S.diag.lastBatchAt)} (${S.diag.batchCount||0}) • старый event: ${ago(S.diag.lastLegacyAt)} (${S.diag.legacyCount||0})`),h(N.Text,{style:st.muted},`Poll: ${ago(S.diag.lastPollAt)} • проверок: ${S.diag.pollCount||0}`),h(N.Text,{style:st.muted},`Последняя смена: ${ago(S.diag.lastChangeAt)} • источник: ${S.diag.lastChangeSource||'нет'} • вызов push: ${ago(S.notifyDiag.lastCall)}`),...tracked().slice(0,5).map(id=>{let pi=presenceInfo(id);return h(N.Text,{key:id,style:st.muted},`${shown(id)}: ${pi.status} • raw=${pi.raw} • mobile=${pi.mobile?'да':'нет'} • VR=${pi.vr?'да':'нет'}`)}),S.notifyDiag.lastError?h(N.Text,{style:{color:'#ed4245'}},S.notifyDiag.lastError):null,h(N.View,{style:st.row},h(N.Pressable,{style:[st.primary,st.grow],onPress:()=>notify('🔔 Тестовое системное уведомление PresenceWatch')},h(N.Text,{style:st.btn},'Тест уведомления')),h(N.Pressable,{style:[st.secondary,st.grow],onPress:()=>{pollPresence();toast('Статусы перечитаны из PresenceStore')}},h(N.Text,{style:st.btn},'Проверить статусы'))),h(N.Pressable,{style:st.secondary,onPress:openNotificationSettings},h(N.Text,{style:st.btn},'Настройки уведомлений Android'))),
   h(N.View,{style:st.card},h(N.Text,{style:st.head},'Watchlist'),h(N.TextInput,{style:st.input,value:input,onChangeText:setInput,keyboardType:'numeric',placeholder:'Discord ID',placeholderTextColor:'#666'}),h(N.Pressable,{style:st.primary,onPress:()=>{if(add(input))setInput('')}},h(N.Text,{style:st.btn},'＋ Добавить')),h(N.TextInput,{style:st.input,value:search,onChangeText:setSearch,placeholder:'Поиск по имени / ID / группе',placeholderTextColor:'#666'}),h(N.Pressable,{style:st.secondary,onPress:()=>{let i=SORTS.indexOf(S.sortMode);S.sortMode=SORTS[(i+1)%SORTS.length]}},h(N.Text,{style:st.btn},`Сортировка: ${SORT_LABEL[S.sortMode]}`)),h(N.Text,{style:st.muted},'Свайп вправо — закрепить • влево — mute')),
   ...list.map(id=>{const u=S.users[id],pf=prefs(id),open=cfg===id,s=status(id),x=stat(id);const card=h(N.View,{style:[st.card,{borderLeftWidth:4,borderLeftColor:u.color||COLORS[0]}]},h(N.View,{style:st.row},!masked&&avatar(id)?h(N.Image,{source:{uri:avatar(id)},style:{width:44,height:44,borderRadius:22}}):null,h(N.View,{style:st.grow},h(N.Text,{style:st.head},`${u.pinned?'📌 ':''}${u.favorite?'⭐ ':''}${u.icon||'👁'} ${shown(id)}`),h(N.Text,{style:st.muted},`${dot(s)} ${sl(s)} • ${groupName(id)}${pf.muted?' • 🔕':''}`))),h(N.View,{style:st.statRow},h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'ПОСЛЕДНИЙ РАЗ'),h(N.Text,{style:st.statV},s==='offline'?ago(x.lastSeen):'Сейчас')),h(N.View,{style:st.stat},h(N.Text,{style:st.statL},'СОБЫТИЙ'),h(N.Text,{style:st.statV},String(x.eventCount||0)))),open?h(N.View,{style:{gap:8}},h(N.View,{style:st.row},h(N.Pressable,{style:[st.secondary,st.grow],onPress:()=>{moveOrder(id,-1);force(x=>x+1)}},h(N.Text,{style:st.btn},'↑ Выше')),h(N.Pressable,{style:[st.secondary,st.grow],onPress:()=>{moveOrder(id,1);force(x=>x+1)}},h(N.Text,{style:st.btn},'↓ Ниже'))),h(N.View,{style:st.row},h(N.Pressable,{style:[st.secondary,st.grow],onPress:()=>patchUser(id,{pinned:!u.pinned})},h(N.Text,{style:st.btn},u.pinned?'Открепить':'Закрепить')),h(N.Pressable,{style:[st.secondary,st.grow],onPress:()=>setPrefs(id,{muted:!pf.muted})},h(N.Text,{style:st.btn},pf.muted?'Unmute':'Mute')),h(N.Pressable,{style:[st.danger,st.grow],onPress:()=>remove(id)},h(N.Text,{style:st.btn},'Удалить')))):null,h(N.View,{style:st.row},h(N.Pressable,{style:[st.primary,st.grow],onPress:()=>{setAliasValue(alias(id)||uname(id));setSelected(id)}},h(N.Text,{style:st.btn},'Открыть')),h(N.Pressable,{style:[st.secondary,st.grow],onPress:()=>setCfg(open?null:id)},h(N.Text,{style:st.btn},'⚙'))));return h(SwipeCard,{key:id,id,disabled:open},card)}),
   h(N.View,{style:st.card},h(N.Text,{style:st.head},'Группы'),h(N.View,{style:st.row},h(N.TextInput,{style:[st.input,st.grow],value:groupInput,onChangeText:setGroupInput,placeholder:'Новая группа',placeholderTextColor:'#666'}),h(N.Pressable,{style:st.primary,onPress:()=>{let n=groupInput.trim();if(n){S.groups=[...S.groups,{id:'g'+Date.now(),name:n}].slice(0,30);setGroupInput('')}}},h(N.Text,{style:st.btn},'Добавить'))),...(S.groups.length?S.groups.map(g=>h(N.View,{key:g.id,style:st.row},h(N.Text,{style:[st.text,st.grow]},`${g.name} • ${tracked().filter(id=>S.users[id]?.group===g.id).length}`),h(N.Pressable,{style:st.danger,onPress:()=>{for(const id of tracked())if(S.users[id]?.group===g.id)patchUser(id,{group:''});S.groups=S.groups.filter(x=>x.id!==g.id)}},h(N.Text,{style:st.btn},'×')))):[h(N.Text,{key:'none',style:st.muted},'Групп пока нет')])),
   h(N.View,{style:st.card},h(N.Text,{style:st.head},'Глобальные уведомления'),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'По умолчанию: вход'),h(N.Switch,{value:!!S.defaults.online,onValueChange:v=>S.defaults={...S.defaults,online:v}})),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'По умолчанию: выход'),h(N.Switch,{value:!!S.defaults.offline,onValueChange:v=>S.defaults={...S.defaults,offline:v}})),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'По умолчанию: смена статуса'),h(N.Switch,{value:!!S.defaults.status,onValueChange:v=>S.defaults={...S.defaults,status:v}})),h(N.Pressable,{style:st.secondary,onPress:()=>{let i=COOLDOWNS.indexOf(+S.cooldownSec||0);S.cooldownSec=COOLDOWNS[(i+1)%COOLDOWNS.length]}},h(N.Text,{style:st.btn},`Cooldown: ${S.cooldownSec} сек`)),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'Тихие часы'),h(N.Switch,{value:!!S.quiet.enabled,onValueChange:v=>S.quiet={...S.quiet,enabled:v}})),h(N.View,{style:st.row},h(N.Pressable,{style:[st.secondary,st.grow],onPress:()=>S.quiet={...S.quiet,start:(+S.quiet.start+1)%24}},h(N.Text,{style:st.btn},`С: ${String(S.quiet.start).padStart(2,'0')}:00`)),h(N.Pressable,{style:[st.secondary,st.grow],onPress:()=>S.quiet={...S.quiet,end:(+S.quiet.end+1)%24}},h(N.Text,{style:st.btn},`До: ${String(S.quiet.end).padStart(2,'0')}:00`)))),
   h(N.View,{style:st.card},h(N.Text,{style:st.head},'Ежедневная сводка'),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'Включена'),h(N.Switch,{value:!!S.dailySummary.enabled,onValueChange:v=>S.dailySummary={...S.dailySummary,enabled:v}})),h(N.Pressable,{style:st.secondary,onPress:()=>S.dailySummary={...S.dailySummary,hour:(+S.dailySummary.hour+1)%24}},h(N.Text,{style:st.btn},`Время: ${String(S.dailySummary.hour).padStart(2,'0')}:00`)),h(N.Pressable,{style:st.secondary,onPress:()=>daily(true)},h(N.Text,{style:st.btn},'Сводка сейчас'))),
-  h(N.View,{style:st.card},h(N.Text,{style:st.head},'Безопасность'),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'Privacy'),h(N.Switch,{value:!!S.security.privacy,onValueChange:v=>S.security={...S.security,privacy:v}})),h(N.TextInput,{style:st.input,value:newPin,onChangeText:setNewPin,keyboardType:'numeric',secureTextEntry:true,placeholder:'Новый PIN 4–8 цифр',placeholderTextColor:'#666'}),h(N.Pressable,{style:st.secondary,onPress:()=>{if(/^\d{4,8}$/.test(newPin)){S.security={...S.security,enabled:true,pinHash:hash(newPin)};setNewPin('');setUnlocked(true);toast('PIN установлен')}else toast('PIN должен быть 4–8 цифр')}},h(N.Text,{style:st.btn},S.security.enabled?'Сменить PIN':'Установить PIN')),S.security.enabled?h(N.Pressable,{style:st.danger,onPress:()=>{S.security={...S.security,enabled:false,pinHash:''};setUnlocked(true);toast('PIN отключён')}},h(N.Text,{style:st.btn},'Отключить PIN')):null),
-  h(N.View,{style:st.card},h(N.Text,{style:st.head},'Safe mode'),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'Включён для UI-модулей'),h(N.Switch,{value:!!S.safeMode.enabled,onValueChange:v=>S.safeMode={...S.safeMode,enabled:v}})),h(N.Text,{style:st.muted},'Ядро presence/poll/notifications Safe Mode больше не отключает.'),h(N.Text,{style:st.muted},`Отключённые UI-модули: ${Object.keys(S.safeMode.disabled||{}).filter(k=>S.safeMode.disabled[k]).join(', ')||'нет'}`),h(N.Pressable,{style:st.secondary,onPress:()=>S.safeMode={enabled:S.safeMode.enabled,disabled:{},counts:{}}},h(N.Text,{style:st.btn},'Сбросить Safe mode'))),
+  h(N.View,{style:st.card},h(N.Text,{style:st.head},'Приватность'),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'Скрывать имена и аватары'),h(N.Switch,{value:!!S.privacy,onValueChange:v=>{S.privacy=v;S.security={privacy:v}}})),h(N.Text,{style:st.muted},'PIN-код полностью удалён из PresenceWatch.')),
+  h(N.View,{style:st.card},h(N.Text,{style:st.head},'Safe mode'),h(N.View,{style:st.row},h(N.Text,{style:[st.text,st.grow]},'Включён для UI-модулей'),h(N.Switch,{value:!!S.safeMode.enabled,onValueChange:v=>S.safeMode={...S.safeMode,enabled:v}})),h(N.Text,{style:st.muted},'Ядро presence/poll/notifications Safe Mode не отключает.'),h(N.Text,{style:st.muted},`Отключённые UI-модули: ${Object.keys(S.safeMode.disabled||{}).filter(k=>S.safeMode.disabled[k]).join(', ')||'нет'}`),h(N.Pressable,{style:st.secondary,onPress:()=>S.safeMode={enabled:S.safeMode.enabled,disabled:{},counts:{}}},h(N.Text,{style:st.btn},'Сбросить Safe mode'))),
   h(N.View,{style:st.card},h(N.Text,{style:st.head},'История / сервис'),h(N.Pressable,{style:st.secondary,onPress:()=>{S.retentionDays=S.retentionDays===7?30:S.retentionDays===30?90:7;cleanup()}},h(N.Text,{style:st.btn},`Хранить ${S.retentionDays} дней`)),h(N.Pressable,{style:st.secondary,onPress:()=>{C.setString(JSON.stringify(S.errors,null,2));toast('Лог скопирован')}},h(N.Text,{style:st.btn},`Ошибки: ${S.errors.length} • копировать`)),h(N.Pressable,{style:st.danger,onPress:()=>S.errors=[]},h(N.Text,{style:st.btn},'Очистить журнал ошибок'))),
   h(N.View,{style:st.card},h(N.Text,{style:st.head},'Обновления'),h(N.Text,{style:st.text},`Установлена: ${V}`),h(N.Text,{style:st.muted},`Последняя: ${S.update.latest||V}`),h(N.Pressable,{style:st.secondary,onPress:()=>checkUpdate(false)},h(N.Text,{style:st.btn},'Проверить обновления'))),
   h(N.View,{style:st.card},h(N.Text,{style:st.head},'Changelog'),...Object.entries(CHANGELOGS).map(([ver,items])=>h(N.View,{key:ver,style:{gap:3}},h(N.Text,{style:st.text},`v${ver}`),...items.map((x,i)=>h(N.Text,{key:i,style:st.muted},`• ${x}`)))))
@@ -231,8 +249,8 @@ function Settings(){
 }
 
 return{
- onLoad(){safe('load',()=>{cleanup();prime();try{F.subscribe('PRESENCE_UPDATE',event)}catch(e){logError('dispatcher-subscribe',e)}attachStore();pollPresence();pollTimer=setInterval(pollPresence,3000);startPatches();maintenanceTimer=setInterval(cleanup,3600000);summaryTimer=setInterval(()=>daily(false),60000);checkUpdate(true)})},
- onUnload(){try{F.unsubscribe('PRESENCE_UPDATE',event)}catch{};try{storeUnsub?.()}catch{};for(const t of [patchTimer,pollTimer,maintenanceTimer,summaryTimer])if(t)clearInterval(t);try{channelInnerUnpatch?.()}catch{};for(const id of [...REPEAT.keys()])clearRepeat(id);for(const u of UNPATCH.splice(0))try{u?.()}catch{};PATCHED.clear();P.clear();PL.clear()},
+ onLoad(){safe('load',()=>{cleanup();prime();try{F.subscribe('PRESENCE_UPDATES',eventBatch)}catch(e){logError('batch-subscribe',e)}try{F.subscribe('PRESENCE_UPDATE',eventLegacy)}catch(e){logError('legacy-subscribe',e)}attachStore();pollPresence();pollTimer=setInterval(pollPresence,3000);startPatches();maintenanceTimer=setInterval(cleanup,3600000);summaryTimer=setInterval(()=>daily(false),60000);checkUpdate(true)})},
+ onUnload(){try{F.unsubscribe('PRESENCE_UPDATES',eventBatch)}catch{};try{F.unsubscribe('PRESENCE_UPDATE',eventLegacy)}catch{};try{storeUnsub?.()}catch{};for(const t of[patchTimer,pollTimer,maintenanceTimer,summaryTimer])if(t)clearInterval(t);try{channelInnerUnpatch?.()}catch{};for(const id of[...REPEAT.keys()])clearRepeat(id);for(const u of UNPATCH.splice(0))try{u?.()}catch{};PATCHED.clear();P.clear();PL.clear()},
  settings:Settings
 }
 })()
